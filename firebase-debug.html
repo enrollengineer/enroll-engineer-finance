@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase Authentication Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .section { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        input { padding: 8px; margin: 5px; width: 200px; border: 1px solid #ddd; border-radius: 4px; }
+        .success { color: green; }
+        .error { color: red; }
+        .log { background: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔥 Firebase Authentication Debugger</h1>
+        
+        <div class="section">
+            <h3>1. Firebase Connection Test</h3>
+            <button onclick="testFirebaseConnection()">Test Firebase Connection</button>
+            <div id="connectionStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>2. Create Test User</h3>
+            <input type="email" id="testEmail" placeholder="test@example.com" value="test@enrollengineer.com">
+            <input type="password" id="testPassword" placeholder="password123" value="testpass123">
+            <button onclick="createTestUser()">Create Test User</button>
+            <div id="createUserStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>3. Test Login</h3>
+            <input type="email" id="loginEmail" placeholder="Email" value="test@enrollengineer.com">
+            <input type="password" id="loginPassword" placeholder="Password" value="testpass123">
+            <button onclick="testLogin()">Test Login</button>
+            <div id="loginStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>4. List All Users (Admin only)</h3>
+            <button onclick="listUsers()">List Users</button>
+            <div id="usersList"></div>
+        </div>
+
+        <div class="section">
+            <h3>5. Debug Log</h3>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="debugLog" class="log"></div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
+
+        // Your Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDzNFfrnoBB9wlRug_cssJKk6alnDGkJuc",
+            authDomain: "enroll-engineer.firebaseapp.com",
+            projectId: "enroll-engineer",
+            storageBucket: "enroll-engineer.firebasestorage.app",
+            messagingSenderId: "1042439322185",
+            appId: "1:1042439322185:web:dcafce2ec8b7d6997b9d98",
+            measurementId: "G-5XJG8RT4FF"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Export to global scope for debugging
+        window.firebaseApp = app;
+        window.firebaseAuth = auth;
+        window.firestoreDb = db;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.signOut = signOut;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.firestoreCollection = collection;
+        window.firestoreAddDoc = addDoc;
+        window.firestoreGetDocs = getDocs;
+        window.firestoreQuery = query;
+        window.firestoreWhere = where;
+
+        log("🔥 Firebase SDK loaded successfully");
+        
+        // Monitor auth state
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                log(`✅ User signed in: ${user.email} (UID: ${user.uid})`);
+            } else {
+                log("❌ User signed out");
+            }
+        });
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('debugLog');
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        window.log = log;
+    </script>
+
+    <script>
+        function testFirebaseConnection() {
+            const statusDiv = document.getElementById('connectionStatus');
+            try {
+                if (window.firebaseAuth && window.firestoreDb) {
+                    statusDiv.innerHTML = '<span class="success">✅ Firebase connection successful!</span>';
+                    log('✅ Firebase connection test passed');
+                } else {
+                    statusDiv.innerHTML = '<span class="error">❌ Firebase not properly initialized</span>';
+                    log('❌ Firebase connection test failed');
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                log(`❌ Firebase connection error: ${error.message}`);
+            }
+        }
+
+        async function createTestUser() {
+            const email = document.getElementById('testEmail').value;
+            const password = document.getElementById('testPassword').value;
+            const statusDiv = document.getElementById('createUserStatus');
+
+            if (!email || !password) {
+                statusDiv.innerHTML = '<span class="error">❌ Please enter email and password</span>';
+                return;
+            }
+
+            try {
+                log(`🔄 Creating user: ${email}`);
+                const userCredential = await window.createUserWithEmailAndPassword(window.firebaseAuth, email, password);
+                
+                // Add user to Firestore
+                await window.firestoreAddDoc(window.firestoreCollection(window.firestoreDb, 'users'), {
+                    uid: userCredential.user.uid,
+                    name: 'Test User',
+                    email: email,
+                    role: 'Admin', // Make it admin for testing
+                    status: 'approved',
+                    createdAt: new Date()
+                });
+
+                statusDiv.innerHTML = '<span class="success">✅ Test user created successfully!</span>';
+                log(`✅ User created successfully: ${email} (UID: ${userCredential.user.uid})`);
+                
+            } catch (error) {
+                let errorMsg = error.message;
+                if (error.code === 'auth/email-already-in-use') {
+                    errorMsg = 'User already exists. Try logging in instead.';
+                }
+                statusDiv.innerHTML = `<span class="error">❌ Error: ${errorMsg}</span>`;
+                log(`❌ User creation failed: ${error.code} - ${error.message}`);
+            }
+        }
+
+        async function testLogin() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const statusDiv = document.getElementById('loginStatus');
+
+            if (!email || !password) {
+                statusDiv.innerHTML = '<span class="error">❌ Please enter email and password</span>';
+                return;
+            }
+
+            try {
+                log(`🔄 Testing login for: ${email}`);
+                const userCredential = await window.signInWithEmailAndPassword(window.firebaseAuth, email, password);
+                statusDiv.innerHTML = '<span class="success">✅ Login successful!</span>';
+                log(`✅ Login successful: ${email} (UID: ${userCredential.user.uid})`);
+                
+            } catch (error) {
+                let errorMsg = 'Login failed';
+                
+                switch(error.code) {
+                    case 'auth/invalid-login-credentials':
+                        errorMsg = 'Invalid email or password. Check your credentials.';
+                        break;
+                    case 'auth/user-not-found':
+                        errorMsg = 'No user found with this email. Create an account first.';
+                        break;
+                    case 'auth/wrong-password':
+                        errorMsg = 'Incorrect password.';
+                        break;
+                    case 'auth/invalid-email':
+                        errorMsg = 'Invalid email format.';
+                        break;
+                    default:
+                        errorMsg = error.message;
+                }
+                
+                statusDiv.innerHTML = `<span class="error">❌ ${errorMsg}</span>`;
+                log(`❌ Login failed: ${error.code} - ${error.message}`);
+            }
+        }
+
+        async function listUsers() {
+            const statusDiv = document.getElementById('usersList');
+            try {
+                log('🔄 Fetching users from Firestore...');
+                const querySnapshot = await window.firestoreGetDocs(window.firestoreCollection(window.firestoreDb, 'users'));
+                
+                let usersHtml = '<h4>Users in Database:</h4>';
+                if (querySnapshot.empty) {
+                    usersHtml += '<p>No users found in Firestore.</p>';
+                } else {
+                    querySnapshot.forEach((doc) => {
+                        const userData = doc.data();
+                        usersHtml += `<div style="margin: 5px 0; padding: 5px; background: #f0f0f0;">
+                            <strong>Email:</strong> ${userData.email}<br>
+                            <strong>Status:</strong> ${userData.status}<br>
+                            <strong>Role:</strong> ${userData.role || 'User'}<br>
+                            <strong>UID:</strong> ${userData.uid}
+                        </div>`;
+                    });
+                }
+                
+                statusDiv.innerHTML = usersHtml;
+                log(`✅ Found ${querySnapshot.size} users in database`);
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<span class="error">❌ Error fetching users: ${error.message}</span>`;
+                log(`❌ Error fetching users: ${error.message}`);
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('debugLog').innerHTML = '';
+        }
+
+        // Auto-test connection on load
+        window.addEventListener('load', () => {
+            setTimeout(testFirebaseConnection, 1000);
+        });
+    </script>
+</body>
+</html>

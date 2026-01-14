@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Approval Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .section { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        button { padding: 12px 20px; margin: 5px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #218838; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        input { padding: 10px; margin: 5px; width: 250px; border: 1px solid #ddd; border-radius: 4px; }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .user-card { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #007bff; }
+        .pending { border-left-color: #ffc107; }
+        .approved { border-left-color: #28a745; }
+        .rejected { border-left-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛠️ User Account Management Tool</h1>
+        
+        <div class="section">
+            <h3>1. Quick Admin Setup</h3>
+            <p>Create an admin account that can approve other users:</p>
+            <button onclick="createAdminUser()">Create Admin User (admin@enrollengineer.com)</button>
+            <div id="adminStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>2. View All Users</h3>
+            <button onclick="loadAllUsers()">Load All Users</button>
+            <div id="usersList"></div>
+        </div>
+
+        <div class="section">
+            <h3>3. Approve Specific User</h3>
+            <input type="email" id="approveEmail" placeholder="Enter user email to approve" style="width: 300px;">
+            <button onclick="approveUserByEmail()">Approve User</button>
+            <div id="approveStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>4. Make User Admin</h3>
+            <input type="email" id="adminEmail" placeholder="Enter email to make admin" style="width: 300px;">
+            <button onclick="makeUserAdmin()">Make Admin</button>
+            <div id="adminMakeStatus"></div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDzNFfrnoBB9wlRug_cssJKk6alnDGkJuc",
+            authDomain: "enroll-engineer.firebaseapp.com",
+            projectId: "enroll-engineer",
+            storageBucket: "enroll-engineer.firebasestorage.app",
+            messagingSenderId: "1042439322185",
+            appId: "1:1042439322185:web:dcafce2ec8b7d6997b9d98",
+            measurementId: "G-5XJG8RT4FF"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Export to global scope
+        window.firebaseAuth = auth;
+        window.db = db;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.collection = collection;
+        window.addDoc = addDoc;
+        window.getDocs = getDocs;
+        window.query = query;
+        window.where = where;
+        window.updateDoc = updateDoc;
+        window.doc = doc;
+
+        console.log("🔥 Firebase initialized for user management");
+    </script>
+
+    <script>
+        async function createAdminUser() {
+            const statusDiv = document.getElementById('adminStatus');
+            const adminEmail = 'admin@enrollengineer.com';
+            const adminPassword = 'admin123456';
+
+            try {
+                statusDiv.innerHTML = '🔄 Creating admin user...';
+                
+                // Create Firebase Auth user
+                const userCredential = await window.createUserWithEmailAndPassword(window.firebaseAuth, adminEmail, adminPassword);
+                
+                // Add to Firestore with admin privileges
+                await window.addDoc(window.collection(window.db, 'users'), {
+                    uid: userCredential.user.uid,
+                    name: 'System Administrator',
+                    email: adminEmail,
+                    role: 'Admin',
+                    status: 'approved',
+                    createdAt: new Date(),
+                    approvedAt: new Date()
+                });
+
+                statusDiv.innerHTML = `<div class="success">✅ Admin user created successfully!<br>
+                    Email: ${adminEmail}<br>
+                    Password: ${adminPassword}<br>
+                    <strong>You can now login with these credentials to approve other users.</strong></div>`;
+                
+            } catch (error) {
+                if (error.code === 'auth/email-already-in-use') {
+                    statusDiv.innerHTML = `<div class="error">⚠️ Admin user already exists. You can login with: ${adminEmail} / ${adminPassword}</div>`;
+                } else {
+                    statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+                }
+            }
+        }
+
+        async function loadAllUsers() {
+            const statusDiv = document.getElementById('usersList');
+            
+            try {
+                statusDiv.innerHTML = '🔄 Loading users...';
+                const querySnapshot = await window.getDocs(window.collection(window.db, 'users'));
+                
+                if (querySnapshot.empty) {
+                    statusDiv.innerHTML = '<p>No users found in database.</p>';
+                    return;
+                }
+
+                let usersHtml = '<h4>All Users:</h4>';
+                querySnapshot.forEach((doc) => {
+                    const user = doc.data();
+                    const statusClass = user.status === 'pending' ? 'pending' : 
+                                      user.status === 'approved' ? 'approved' : 'rejected';
+                    
+                    usersHtml += `
+                        <div class="user-card ${statusClass}">
+                            <strong>📧 ${user.email}</strong> 
+                            <span style="float: right;">
+                                <span style="background: ${getStatusColor(user.status)}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                                    ${user.status.toUpperCase()}
+                                </span>
+                                <span style="background: ${getRoleColor(user.role)}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-left: 5px;">
+                                    ${user.role || 'User'}
+                                </span>
+                            </span>
+                            <br>
+                            <small>👤 ${user.name || 'No name'} | 🆔 ${user.uid}</small>
+                            ${user.status === 'pending' ? `<br><button onclick="approveUser('${doc.id}', '${user.email}')" style="margin-top: 10px; padding: 5px 10px; font-size: 12px;">Approve This User</button>` : ''}
+                        </div>
+                    `;
+                });
+                
+                statusDiv.innerHTML = usersHtml;
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">❌ Error loading users: ${error.message}</div>`;
+            }
+        }
+
+        async function approveUser(docId, email) {
+            try {
+                await window.updateDoc(window.doc(window.db, 'users', docId), {
+                    status: 'approved',
+                    approvedAt: new Date()
+                });
+                
+                alert(`✅ User ${email} has been approved!`);
+                loadAllUsers(); // Refresh the list
+                
+            } catch (error) {
+                alert(`❌ Error approving user: ${error.message}`);
+            }
+        }
+
+        async function approveUserByEmail() {
+            const email = document.getElementById('approveEmail').value.trim();
+            const statusDiv = document.getElementById('approveStatus');
+            
+            if (!email) {
+                statusDiv.innerHTML = '<div class="error">❌ Please enter an email address</div>';
+                return;
+            }
+
+            try {
+                statusDiv.innerHTML = '🔄 Searching for user...';
+                
+                const q = window.query(window.collection(window.db, 'users'), window.where('email', '==', email));
+                const querySnapshot = await window.getDocs(q);
+                
+                if (querySnapshot.empty) {
+                    statusDiv.innerHTML = '<div class="error">❌ User not found</div>';
+                    return;
+                }
+
+                const userDoc = querySnapshot.docs[0];
+                await window.updateDoc(window.doc(window.db, 'users', userDoc.id), {
+                    status: 'approved',
+                    approvedAt: new Date()
+                });
+
+                statusDiv.innerHTML = `<div class="success">✅ User ${email} has been approved successfully!</div>`;
+                document.getElementById('approveEmail').value = '';
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function makeUserAdmin() {
+            const email = document.getElementById('adminEmail').value.trim();
+            const statusDiv = document.getElementById('adminMakeStatus');
+            
+            if (!email) {
+                statusDiv.innerHTML = '<div class="error">❌ Please enter an email address</div>';
+                return;
+            }
+
+            try {
+                statusDiv.innerHTML = '🔄 Updating user role...';
+                
+                const q = window.query(window.collection(window.db, 'users'), window.where('email', '==', email));
+                const querySnapshot = await window.getDocs(q);
+                
+                if (querySnapshot.empty) {
+                    statusDiv.innerHTML = '<div class="error">❌ User not found</div>';
+                    return;
+                }
+
+                const userDoc = querySnapshot.docs[0];
+                await window.updateDoc(window.doc(window.db, 'users', userDoc.id), {
+                    role: 'Admin',
+                    status: 'approved',
+                    approvedAt: new Date()
+                });
+
+                statusDiv.innerHTML = `<div class="success">✅ User ${email} is now an Admin!</div>`;
+                document.getElementById('adminEmail').value = '';
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        function getStatusColor(status) {
+            switch(status) {
+                case 'approved': return '#28a745';
+                case 'pending': return '#ffc107';
+                case 'rejected': return '#dc3545';
+                default: return '#6c757d';
+            }
+        }
+
+        function getRoleColor(role) {
+            switch(role) {
+                case 'Admin': return '#007bff';
+                case 'Manager': return '#17a2b8';
+                default: return '#6c757d';
+            }
+        }
+
+        // Auto-load users on page load
+        window.addEventListener('load', () => {
+            setTimeout(loadAllUsers, 1000);
+        });
+    </script>
+</body>
+</html>

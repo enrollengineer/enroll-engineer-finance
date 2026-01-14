@@ -1,0 +1,63 @@
+// SECURE FIRESTORE RULES FOR PRODUCTION
+// Copy these to Firebase Console -> Firestore -> Rules when ready for production
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
+    }
+    
+    // Helper function to check if user is approved
+    function isApproved() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved';
+    }
+    
+    // Users collection rules
+    match /users/{userId} {
+      // Users can read their own document, admins can read all
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      
+      // Only authenticated users can create their own user document during signup
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // Users can update their own basic info, admins can update anyone
+      allow update: if request.auth != null && 
+        (request.auth.uid == userId || isAdmin());
+      
+      // Only admins can delete users
+      allow delete: if request.auth != null && isAdmin();
+    }
+    
+    // Invoices collection rules
+    match /invoices/{invoiceId} {
+      // Only approved users can read invoices
+      allow read: if request.auth != null && isApproved();
+      
+      // Only approved users can create/update invoices
+      allow create, update: if request.auth != null && isApproved();
+      
+      // Only admins can delete invoices
+      allow delete: if request.auth != null && isAdmin();
+    }
+    
+    // Accounts collection rules
+    match /accounts/{accountId} {
+      // Only approved users can access accounts
+      allow read, write: if request.auth != null && isApproved();
+    }
+    
+    // Default: Deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+// IMPORTANT NOTES:
+// 1. These rules check user roles and approval status from the users collection
+// 2. Only approved users can access most data
+// 3. Admins have broader access permissions
+// 4. This prevents unauthorized access while allowing your app to function
+// 5. Test thoroughly before deploying to production
