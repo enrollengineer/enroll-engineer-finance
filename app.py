@@ -1,6 +1,5 @@
 from flask import Flask, jsonify, request, session, render_template, send_from_directory
 from flask_cors import CORS
-from flask_session import Session
 import firebase_admin
 from firebase_admin import credentials, firestore
 import os
@@ -21,14 +20,11 @@ app = Flask(
     template_folder='templates'
 )
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here-change-in-production')
-app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_PERMANENT'] = False
-app.config['SESSION_USE_SIGNER'] = True
-app.config['SESSION_KEY_PREFIX'] = 'financeflow:'
+# Use Flask's built-in session (signed cookies) - works on Vercel serverless
 app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-Session(app)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
 # Configure CORS with proper settings
 CORS(app, 
