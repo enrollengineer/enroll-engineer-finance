@@ -1,7 +1,14 @@
 from flask import Flask, jsonify, request, session, render_template, send_from_directory
 from flask_cors import CORS
-import firebase_admin
-from firebase_admin import credentials, firestore
+# Import firebase admin components defensively (guard against ImportError in serverless)
+try:
+    import firebase_admin
+    from firebase_admin import credentials, firestore
+except Exception as e:
+    firebase_admin = None
+    credentials = None
+    firestore = None
+    print(f"⚠️ Warning: firebase_admin import failed: {e}")
 import os
 from dotenv import load_dotenv
 import hashlib
@@ -69,6 +76,20 @@ except Exception as e:
 
 def require_db_response():
     return jsonify({'error': 'Backend not configured: missing Firebase credentials'}), 503
+
+# Health check
+@app.route('/health')
+def health_check():
+    return jsonify({'status': 'ok'}), 200
+
+# Global error handler to return friendly message and avoid function crash
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Log full exception to server logs for debugging
+    import traceback
+    traceback.print_exc()
+    # Return a safe JSON error without exposing internals
+    return jsonify({'error': 'Internal server error', 'message': str(e)}), 500
 
 # Backward-compatible routes for moved static assets
 # Allow existing HTML references like /admin.js, /auth.js, /script.js and /assets/*
