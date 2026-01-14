@@ -129,22 +129,26 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not firebase_initialized:
+        if not firebase_initialized or db is None:
             return jsonify({'error': 'Backend not configured: missing Firebase credentials'}), 503
         print(f"DEBUG: admin_required check - session: {dict(session)}")  # Debug line
         if 'user_id' not in session:
             print(f"DEBUG: No user_id in session for admin check, returning 401")  # Debug line
             return jsonify({'error': 'Authentication required'}), 401
         
-        user_ref = db.collection('users').document(session['user_id'])
-        user_doc = user_ref.get()
-        
-        if not user_doc.exists or user_doc.to_dict().get('role') != 'Admin':
-            print(f"DEBUG: User is not admin, returning 403")  # Debug line
-            return jsonify({'error': 'Admin access required'}), 403
-        
-        print(f"DEBUG: Admin access granted for: {session['user_id']}")  # Debug line
-        return f(*args, **kwargs)
+        try:
+            user_ref = db.collection('users').document(session['user_id'])
+            user_doc = user_ref.get()
+            
+            if not user_doc.exists or user_doc.to_dict().get('role') != 'Admin':
+                print(f"DEBUG: User is not admin, returning 403")  # Debug line
+                return jsonify({'error': 'Admin access required'}), 403
+            
+            print(f"DEBUG: Admin access granted for: {session['user_id']}")  # Debug line
+            return f(*args, **kwargs)
+        except Exception as e:
+            print(f"DEBUG: Error in admin_required: {str(e)}")
+            return jsonify({'error': 'Authorization check failed'}), 500
     return decorated_function
 
 def approved_user_required(f):
