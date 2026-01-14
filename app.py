@@ -33,8 +33,9 @@ CORS(app,
      allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
-# Initialize Firebase with secure configuration
-# Prefer credentials from environment over local file
+# Initialize Firebase safely (don't crash import-time if credentials are missing)
+firebase_initialized = False
+db = None
 try:
     cred = None
     if os.getenv('FIREBASE_CREDENTIALS_JSON'):
@@ -46,14 +47,28 @@ try:
     else:
         # Fallback to file path (ensure this file is gitignored)
         cred_path = os.getenv('FIREBASE_CREDENTIALS_FILE', 'firebase-service-account.json')
-        cred = credentials.Certificate(cred_path)
+        try:
+            cred = credentials.Certificate(cred_path)
+        except Exception:
+            cred = None
 
-    firebase_admin.initialize_app(cred)
+    if cred:
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        firebase_initialized = True
+        print("✅ Firebase initialized")
+    else:
+        print("⚠️ Firebase credentials not provided or file missing; running without Firebase (limited functionality)")
+
 except Exception as e:
-    raise RuntimeError(f"Failed to initialize Firebase credentials: {e}")
+    print(f"❌ Firebase init failed: {e}")
+    db = None
+    firebase_initialized = False
 
-# Get Firestore client
-db = firestore.client()
+# Helper response when DB not configured
+
+def require_db_response():
+    return jsonify({'error': 'Backend not configured: missing Firebase credentials'}), 503
 
 # Backward-compatible routes for moved static assets
 # Allow existing HTML references like /admin.js, /auth.js, /script.js and /assets/*
@@ -93,6 +108,8 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        if not firebase_initialized:
+            return jsonify({'error': 'Backend not configured: missing Firebase credentials'}), 503
         print(f"DEBUG: admin_required check - session: {dict(session)}")  # Debug line
         if 'user_id' not in session:
             print(f"DEBUG: No user_id in session for admin check, returning 401")  # Debug line
@@ -112,6 +129,8 @@ def admin_required(f):
 def approved_user_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        if not firebase_initialized:
+            return jsonify({'error': 'Backend not configured: missing Firebase credentials'}), 503
         if 'user_id' not in session:
             return jsonify({'error': 'Authentication required'}), 401
         
@@ -148,6 +167,10 @@ def init_admin_user():
     if not should_init or not admin_email or not admin_password:
         print("ℹ️ Skipping admin auto-creation (set INIT_ADMIN_ON_START=true and ADMIN_EMAIL/ADMIN_PASSWORD to enable).")
         return
+
+    if not firebase_initialized:
+        print("⚠️ Skipping admin auto-creation because Firebase is not initialized.")
+        return
     
     try:
         users_ref = db.collection('users')
@@ -174,6 +197,9 @@ def init_admin_user():
 @app.route('/api/auth/signup', methods=['POST'])
 def signup():
     try:
+        if not firebase_initialized:
+            return require_db_response()
+
         data = request.get_json()
         email = data.get('email', '').strip().lower()
         password = data.get('password', '').strip()
@@ -214,6 +240,9 @@ def signup():
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     try:
+        if not firebase_initialized:
+            return require_db_response()
+
         data = request.get_json()
         email = data.get('email', '').strip().lower()
         password = data.get('password', '').strip()
@@ -271,6 +300,9 @@ def logout():
 @login_required
 def get_current_user():
     try:
+        if not firebase_initialized:
+            return require_db_response()
+
         print(f"DEBUG: Session data: {dict(session)}")  # Debug line
         user_ref = db.collection('users').document(session['user_id'])
         user_doc = user_ref.get()
