@@ -93,6 +93,18 @@ def serve_legacy_assets(filename):
 def serve_index():
     return render_template('index.html')
 
+# Admin approval UI (render approve-user.html)
+@app.route('/admin/approve-user')
+@admin_required
+def serve_approve_user():
+    return render_template('approve-user.html')
+
+# Admin setup page route (render admin_setup.html)
+@app.route('/admin_setup')
+@admin_required
+def serve_admin_setup():
+    return render_template('admin_setup.html')
+
 # Authentication Decorators
 def login_required(f):
     @wraps(f)
