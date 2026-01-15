@@ -53,42 +53,10 @@
         </div>
     </div>
 
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
-        import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyDzNFfrnoBB9wlRug_cssJKk6alnDGkJuc",
-            authDomain: "enroll-engineer.firebaseapp.com",
-            projectId: "enroll-engineer",
-            storageBucket: "enroll-engineer.firebasestorage.app",
-            messagingSenderId: "1042439322185",
-            appId: "1:1042439322185:web:dcafce2ec8b7d6997b9d98",
-            measurementId: "G-5XJG8RT4FF"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        // Export to global scope
-        window.firebaseAuth = auth;
-        window.db = db;
-        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
-        window.collection = collection;
-        window.addDoc = addDoc;
-        window.getDocs = getDocs;
-        window.query = query;
-        window.where = where;
-        window.updateDoc = updateDoc;
-        window.doc = doc;
-
-        console.log("🔥 Firebase initialized for user management");
-    </script>
 
     <script>
+        const API_BASE_URL = '/api';
+
         async function createAdminUser() {
             const statusDiv = document.getElementById('adminStatus');
             const adminEmail = 'admin@enrollengineer.com';
@@ -97,31 +65,34 @@
             try {
                 statusDiv.innerHTML = '🔄 Creating admin user...';
                 
-                // Create Firebase Auth user
-                const userCredential = await window.createUserWithEmailAndPassword(window.firebaseAuth, adminEmail, adminPassword);
-                
-                // Add to Firestore with admin privileges
-                await window.addDoc(window.collection(window.db, 'users'), {
-                    uid: userCredential.user.uid,
-                    name: 'System Administrator',
-                    email: adminEmail,
-                    role: 'Admin',
-                    status: 'approved',
-                    createdAt: new Date(),
-                    approvedAt: new Date()
+                const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: adminEmail,
+                        password: adminPassword,
+                        name: 'System Administrator',
+                        role: 'Admin'
+                    })
                 });
 
-                statusDiv.innerHTML = `<div class="success">✅ Admin user created successfully!<br>
-                    Email: ${adminEmail}<br>
-                    Password: ${adminPassword}<br>
-                    <strong>You can now login with these credentials to approve other users.</strong></div>`;
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusDiv.innerHTML = `<div class="success">✅ Admin user created successfully!<br>
+                        Email: ${adminEmail}<br>
+                        Password: ${adminPassword}<br>
+                        <strong>You can now login with these credentials to approve other users.</strong></div>`;
+                } else {
+                    if (response.status === 400 && data.error && data.error.includes('already exists')) {
+                        statusDiv.innerHTML = `<div class="error">⚠️ Admin user already exists. You can login with: ${adminEmail} / ${adminPassword}</div>`;
+                    } else {
+                        statusDiv.innerHTML = `<div class="error">❌ Error: ${data.error || 'Failed to create admin user'}</div>`;
+                    }
+                }
                 
             } catch (error) {
-                if (error.code === 'auth/email-already-in-use') {
-                    statusDiv.innerHTML = `<div class="error">⚠️ Admin user already exists. You can login with: ${adminEmail} / ${adminPassword}</div>`;
-                } else {
-                    statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
-                }
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
             }
         }
 
@@ -130,16 +101,25 @@
             
             try {
                 statusDiv.innerHTML = '🔄 Loading users...';
-                const querySnapshot = await window.getDocs(window.collection(window.db, 'users'));
                 
-                if (querySnapshot.empty) {
+                const response = await fetch(`${API_BASE_URL}/admin/users`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const users = await response.json();
+                
+                if (!users || users.length === 0) {
                     statusDiv.innerHTML = '<p>No users found in database.</p>';
                     return;
                 }
 
                 let usersHtml = '<h4>All Users:</h4>';
-                querySnapshot.forEach((doc) => {
-                    const user = doc.data();
+                users.forEach((user) => {
                     const statusClass = user.status === 'pending' ? 'pending' : 
                                       user.status === 'approved' ? 'approved' : 'rejected';
                     
@@ -156,7 +136,7 @@
                             </span>
                             <br>
                             <small>👤 ${user.name || 'No name'} | 🆔 ${user.uid}</small>
-                            ${user.status === 'pending' ? `<br><button onclick="approveUser('${doc.id}', '${user.email}')" style="margin-top: 10px; padding: 5px 10px; font-size: 12px;">Approve This User</button>` : ''}
+                            ${user.status === 'pending' ? `<br><button onclick="approveUser('${user.uid}', '${user.email}')" style="margin-top: 10px; padding: 5px 10px; font-size: 12px;">Approve This User</button>` : ''}
                         </div>
                     `;
                 });
@@ -168,13 +148,17 @@
             }
         }
 
-        async function approveUser(docId, email) {
+        async function approveUser(userId, email) {
             try {
-                await window.updateDoc(window.doc(window.db, 'users', docId), {
-                    status: 'approved',
-                    approvedAt: new Date()
+                const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/approve`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' }
                 });
-                
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 alert(`✅ User ${email} has been approved!`);
                 loadAllUsers(); // Refresh the list
                 
@@ -195,19 +179,31 @@
             try {
                 statusDiv.innerHTML = '🔄 Searching for user...';
                 
-                const q = window.query(window.collection(window.db, 'users'), window.where('email', '==', email));
-                const querySnapshot = await window.getDocs(q);
+                const response = await fetch(`${API_BASE_URL}/admin/users`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const users = await response.json();
+                const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
                 
-                if (querySnapshot.empty) {
+                if (!user) {
                     statusDiv.innerHTML = '<div class="error">❌ User not found</div>';
                     return;
                 }
 
-                const userDoc = querySnapshot.docs[0];
-                await window.updateDoc(window.doc(window.db, 'users', userDoc.id), {
-                    status: 'approved',
-                    approvedAt: new Date()
+                const approveResponse = await fetch(`${API_BASE_URL}/admin/users/${user.uid}/approve`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' }
                 });
+
+                if (!approveResponse.ok) {
+                    throw new Error(`HTTP ${approveResponse.status}: ${approveResponse.statusText}`);
+                }
 
                 statusDiv.innerHTML = `<div class="success">✅ User ${email} has been approved successfully!</div>`;
                 document.getElementById('approveEmail').value = '';
@@ -229,20 +225,32 @@
             try {
                 statusDiv.innerHTML = '🔄 Updating user role...';
                 
-                const q = window.query(window.collection(window.db, 'users'), window.where('email', '==', email));
-                const querySnapshot = await window.getDocs(q);
+                const response = await fetch(`${API_BASE_URL}/admin/users`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const users = await response.json();
+                const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
                 
-                if (querySnapshot.empty) {
+                if (!user) {
                     statusDiv.innerHTML = '<div class="error">❌ User not found</div>';
                     return;
                 }
 
-                const userDoc = querySnapshot.docs[0];
-                await window.updateDoc(window.doc(window.db, 'users', userDoc.id), {
-                    role: 'Admin',
-                    status: 'approved',
-                    approvedAt: new Date()
+                const updateResponse = await fetch(`${API_BASE_URL}/admin/users/${user.uid}/role`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: 'Admin' })
                 });
+
+                if (!updateResponse.ok) {
+                    throw new Error(`HTTP ${updateResponse.status}: ${updateResponse.statusText}`);
+                }
 
                 statusDiv.innerHTML = `<div class="success">✅ User ${email} is now an Admin!</div>`;
                 document.getElementById('adminEmail').value = '';
