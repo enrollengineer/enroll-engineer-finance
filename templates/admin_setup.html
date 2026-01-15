@@ -6,39 +6,6 @@
     <title>FinanceFlow Pro - Admin Setup</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    
-    <!-- Firebase Integration -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
-        import { getFirestore, collection, getDocs, updateDoc, deleteDoc, addDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
-        import { getAuth, deleteUser } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyDCLEndOfHbdyEY5oy8rUkS7uTOZ2vo22Q",
-            authDomain: "billing-final.firebaseapp.com",
-            projectId: "billing-final",
-            storageBucket: "billing-final.firebasestorage.app",
-            messagingSenderId: "815211819105",
-            appId: "1:815211819105:web:e86215b65d08c7a126ba20",
-            measurementId: "G-GVSZM3YSY6"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        
-        window.firestoreDb = db;
-        window.firebaseAuth = auth;
-        window.firestoreGetDocs = getDocs;
-        window.firestoreUpdateDoc = updateDoc;
-        window.firestoreDeleteDoc = deleteDoc;
-        window.firestoreAddDoc = addDoc;
-        window.firebaseDeleteUser = deleteUser;
-        window.firestoreCollection = collection;
-        window.firestoreDoc = doc;
-        window.firestoreQuery = query;
-        window.firestoreWhere = where;
-    </script>
 </head>
 
 <body class="min-h-screen flex items-center justify-center" style="background-color: #D9D4D4;">
@@ -115,6 +82,8 @@
     </div>
 
     <script>
+        const API_BASE_URL = '/api';
+
         function showStatus(message, type = 'info') {
             const status = document.getElementById('status');
             const colors = {
@@ -136,23 +105,32 @@
             try {
                 showStatus('Searching for user...', 'info');
                 
-                const userDoc = await window.firestoreGetDocs(
-                    window.firestoreQuery(
-                        window.firestoreCollection(window.firestoreDb, 'users'),
-                        window.firestoreWhere('email', '==', email)
-                    )
-                );
+                const response = await fetch(`${API_BASE_URL}/admin/users`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
 
-                if (userDoc.empty) {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const users = await response.json();
+                const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+                if (!user) {
                     showStatus('User not found. Please sign up first in the main app.', 'error');
                     return;
                 }
 
-                const userData = userDoc.docs[0];
-                await window.firestoreUpdateDoc(userData.ref, {
-                    status: 'approved',
-                    role: 'Admin'
+                const updateResponse = await fetch(`${API_BASE_URL}/admin/users/${user.uid}/role`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: 'Admin' })
                 });
+
+                if (!updateResponse.ok) {
+                    throw new Error(`HTTP ${updateResponse.status}: ${updateResponse.statusText}`);
+                }
 
                 showStatus('✅ Success! You are now an Admin. Go back and login!', 'success');
                 
@@ -170,26 +148,34 @@
             try {
                 showStatus('Loading users...', 'info');
                 
-                const querySnapshot = await window.firestoreGetDocs(
-                    window.firestoreCollection(window.firestoreDb, 'users')
-                );
-                
+                const response = await fetch(`${API_BASE_URL}/admin/users`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const users = await response.json();
                 const usersList = document.getElementById('usersList');
                 usersList.innerHTML = '';
 
-                if (querySnapshot.empty) {
+                if (!users || users.length === 0) {
                     usersList.innerHTML = '<p class="text-gray-500 text-sm">No users found. Sign up first!</p>';
                     showStatus('No users in database', 'info');
                     return;
                 }
 
-                querySnapshot.forEach((doc) => {
-                    const user = doc.data();
-                    
+                let visibleCount = 0;
+
+                users.forEach((user) => {
                     // Only show users that are not rejected (skip rejected users completely)
                     if (user.status === 'rejected') {
                         return; // Skip this user, don't display rejected users
                     }
+                    
+                    visibleCount++;
                     
                     const userDiv = document.createElement('div');
                     userDiv.className = 'bg-gray-50 p-3 rounded-lg text-left';
@@ -209,24 +195,24 @@
                         </div>
                         ${user.status === 'pending' ? `
                             <div class="mt-2 space-y-2">
-                                <select id="roleSelect_${doc.id}" class="w-full text-xs border border-gray-300 rounded px-2 py-1">
+                                <select id="roleSelect_${user.uid}" class="w-full text-xs border border-gray-300 rounded px-2 py-1">
                                     <option value="Admin">Admin</option>
                                     <option value="Manager">Manager</option>
                                     <option value="User" selected>User</option>
                                 </select>
                                 <div class="flex space-x-2">
-                                    <button onclick="approveUser('${doc.id}', '${user.email}')" 
+                                    <button onclick="approveUser('${user.uid}', '${user.email}')" 
                                             class="flex-1 bg-green-100 text-green-700 px-2 py-1 rounded text-xs hover:bg-green-200">
                                         Approve
                                     </button>
-                                    <button onclick="rejectUser('${doc.id}', '${user.email}')" 
+                                    <button onclick="rejectUser('${user.uid}', '${user.email}')" 
                                             class="flex-1 bg-red-100 text-red-700 px-2 py-1 rounded text-xs hover:bg-red-200">
                                         Reject
                                     </button>
                                 </div>
                             </div>
                         ` : user.status === 'approved' ? `
-                            <button onclick="revokeUser('${doc.id}', '${user.email}')" 
+                            <button onclick="revokeUser('${user.uid}', '${user.email}')" 
                                     class="mt-2 w-full bg-red-100 text-red-700 px-2 py-1 rounded text-xs hover:bg-red-200">
                                 Revoke Access
                             </button>
@@ -235,9 +221,7 @@
                     usersList.appendChild(userDiv);
                 });
 
-                // Count only non-rejected users for display
-                const visibleUsersCount = usersList.children.length;
-                showStatus(`Found ${visibleUsersCount} active users`, 'success');
+                showStatus(`Found ${visibleCount} active users`, 'success');
             } catch (error) {
                 console.error('Error:', error);
                 showStatus('Error loading users: ' + error.message, 'error');
@@ -249,13 +233,16 @@
                 const roleSelect = document.getElementById(`roleSelect_${userId}`);
                 const selectedRole = roleSelect ? roleSelect.value : 'User';
                 
-                await window.firestoreUpdateDoc(
-                    window.firestoreDoc(window.firestoreDb, 'users', userId), 
-                    {
-                        status: 'approved',
-                        role: selectedRole
-                    }
-                );
+                const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/approve`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: selectedRole })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 showStatus(`✅ ${email} is now approved as ${selectedRole}!`, 'success');
                 loadUsers(); // Reload the list
             } catch (error) {
@@ -266,25 +253,15 @@
 
         async function rejectUser(userId, email) {
             try {
-                // Delete the user document from Firestore
-                await window.firestoreDeleteDoc(
-                    window.firestoreDoc(window.firestoreDb, 'users', userId)
-                );
-                
-                // Add email to blocked list to prevent automatic signup
-                try {
-                    await window.firestoreAddDoc(
-                        window.firestoreCollection(window.firestoreDb, 'blocked_emails'),
-                        {
-                            email: email,
-                            blockedAt: new Date(),
-                            reason: 'rejected_by_admin'
-                        }
-                    );
-                } catch (blockError) {
-                    console.log('Could not add to blocked list:', blockError);
+                const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/reject`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
-                
+
                 showStatus(`❌ ${email} rejected! Use 'Unblock Email' to make it available again.`, 'success');
                 loadUsers(); // Reload the list
             } catch (error) {
@@ -295,25 +272,15 @@
 
         async function revokeUser(userId, email) {
             try {
-                // Delete the user document completely when revoked
-                await window.firestoreDeleteDoc(
-                    window.firestoreDoc(window.firestoreDb, 'users', userId)
-                );
-                
-                // Add email to blocked list
-                try {
-                    await window.firestoreAddDoc(
-                        window.firestoreCollection(window.firestoreDb, 'blocked_emails'),
-                        {
-                            email: email,
-                            blockedAt: new Date(),
-                            reason: 'revoked_by_admin'
-                        }
-                    );
-                } catch (blockError) {
-                    console.log('Could not add to blocked list:', blockError);
+                const response = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
-                
+
                 showStatus(`🚫 Access revoked for ${email}! Use 'Unblock Email' to make it available again.`, 'success');
                 loadUsers(); // Reload the list
             } catch (error) {
@@ -343,32 +310,17 @@
             try {
                 showStatus('Unblocking email...', 'info');
                 
-                // Remove from blocked emails collection
-                const blockedQuery = await window.firestoreGetDocs(
-                    window.firestoreQuery(
-                        window.firestoreCollection(window.firestoreDb, 'blocked_emails'),
-                        window.firestoreWhere('email', '==', email)
-                    )
-                );
-                
-                if (!blockedQuery.empty) {
-                    // Delete all blocked records for this email
-                    const deletePromises = blockedQuery.docs.map(doc => 
-                        window.firestoreDeleteDoc(doc.ref)
-                    );
-                    await Promise.all(deletePromises);
+                // Call backend API to unblock email
+                const response = await fetch(`${API_BASE_URL}/admin/unblock-email`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
-                
-                // Add email to unblocked list (allows signup even if exists in Firebase Auth)
-                await window.firestoreAddDoc(
-                    window.firestoreCollection(window.firestoreDb, 'unblocked_emails'),
-                    {
-                        email: email,
-                        unblockedAt: new Date(),
-                        unblockedBy: 'admin'
-                    }
-                );
-                
+
                 showStatus(`✅ ${email} is now unblocked and available for signup!`, 'success');
                 hideUnblockEmailForm();
                 
