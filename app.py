@@ -376,22 +376,25 @@ def debug_session():
 @admin_required
 def get_all_users():
     try:
+        if not firebase_initialized or db is None:
+            return jsonify({'error': 'Backend not configured: missing Firebase credentials'}), 503
+        
         users_ref = db.collection('users')
         users = []
         
         for doc in users_ref.stream():
             user_data = doc.to_dict()
             users.append({
-                'id': doc.id,
+                'uid': doc.id,
                 'name': user_data.get('name'),
                 'email': user_data.get('email'),
-                'role': user_data.get('role'),
-                'status': user_data.get('status'),
+                'role': user_data.get('role', 'User'),
+                'status': user_data.get('status', 'pending'),
                 'createdAt': user_data.get('createdAt'),
                 'lastLogin': user_data.get('lastLogin')
             })
         
-        return jsonify({'users': users}), 200
+        return jsonify(users), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
