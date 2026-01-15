@@ -470,6 +470,33 @@ def delete_user(user_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/admin/unblock-email', methods=['POST'])
+@admin_required
+def unblock_email():
+    try:
+        data = request.get_json()
+        email = data.get('email', '').strip().lower()
+        
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+        
+        # Remove from blocked_emails collection
+        blocked_emails = db.collection('blocked_emails').where('email', '==', email).stream()
+        for doc in blocked_emails:
+            doc.reference.delete()
+        
+        # Add to unblocked_emails collection
+        db.collection('unblocked_emails').add({
+            'email': email,
+            'unblocked_at': datetime.now(),
+            'unblocked_by': 'admin'
+        })
+        
+        return jsonify({'message': f'Email {email} unblocked successfully'}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # API Routes (Protected)
 @app.route('/api/invoices', methods=['GET'])
 @approved_user_required
